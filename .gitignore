@@ -1,0 +1,27 @@
+# Cached data (large, re-pullable from Baseball Savant)
+data/*.parquet
+
+# Generated figure HTML (built artifacts)
+docs/*.html
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Jupyter / Quarto
+.ipynb_checkpoints/
+*.quarto_ipynb
+.quarto/
+
+# Environment
+.env
+.venv/
+venv/
+
+# macOS
+.DS_Store

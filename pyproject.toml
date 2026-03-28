@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "baseball-range"
+version = "0.1.0"
+description = "CF range estimation from Statcast data — ellipse model with Plotly visualizations"
+requires-python = ">=3.11"
+dependencies = [
+    "pybaseball>=2.2",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "scikit-learn>=1.4",
+    "plotly>=5.18",
+    "jupyter>=1.0",
+    "ipykernel>=6.0",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+bayes = [
+    "cmdstanpy>=1.2",
+]
+dev = [
+    "ruff>=0.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
