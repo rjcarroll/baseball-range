@@ -404,19 +404,22 @@ def plot_spectacular_zone(
 
 def plot_bayes_spectacular_zone(
     posteriors,
-    tau_h: float = 5.0,
+    tau_h: float = 4.0,
     catch_threshold: float = 0.80,
-    x_range: tuple = (-130, 130),
-    y_range: tuple = (185, 455),
-    n: int = 100,
+    x_range: tuple = (-155, 155),
+    y_range: tuple = (165, 470),
+    n: int = 120,
     title: str | None = None,
 ) -> go.Figure:
     """
     Field heatmap: how many fielders have reliable range at each location?
 
-    Uses posterior-mean (a, b) for each player — fast grid computation.
+    Uses posterior-mean parameters for each player — fast grid computation.
     Dark spots are the spectacular zone where only the best CFs operate.
+    Uses v2.0 distance formula: y0_offset shifts each player's ellipse center,
+    gamma scales effective depth speed on charging plays.
     """
+    from scipy.special import expit
     xs = np.linspace(*x_range, n)
     ys = np.linspace(*y_range, n)
     X, Y = np.meshgrid(xs, ys)
@@ -426,8 +429,10 @@ def plot_bayes_spectacular_zone(
 
     coverage = np.zeros(len(dx), dtype=float)
     for bpr in posteriors:
-        d = np.sqrt((dx / (bpr.a_mean * tau)) ** 2 + (dy / (bpr.b_mean * tau)) ** 2)
-        from scipy.special import expit
+        dy_adj        = dy - bpr.y0_offset_mean
+        charge_weight = expit(-dy_adj / 5.0)
+        b_eff         = bpr.b_mean * np.exp(np.log(bpr.gamma_mean) * charge_weight)
+        d = np.sqrt((dx / (bpr.a_mean * tau)) ** 2 + (dy_adj / (b_eff * tau)) ** 2)
         p = expit(bpr.beta_0 - bpr.beta_1 * d)
         coverage += (p >= catch_threshold).astype(float)
 

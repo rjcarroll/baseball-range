@@ -191,7 +191,7 @@ fig7b.write_html("../docs/bayes_rankings_spectacular.html", include_plotlyjs="cd
 print("Saved bayes_rankings_spectacular.html")
 
 # Figure 7c: Spectacular zone coverage heatmap
-fig7c = plot_bayes_spectacular_zone(posts_2024, tau_h=5.0)
+fig7c = plot_bayes_spectacular_zone(posts_2024, tau_h=4.0)
 fig7c.show()
 fig7c.write_html("../docs/bayes_spectacular_zone.html", include_plotlyjs="cdn")
 print("Saved bayes_spectacular_zone.html")

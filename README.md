@@ -314,15 +314,54 @@ fielder-vs-fielder comparison across different team contexts.
 
 ---
 
+## Results
+
+v2.0 diagnostic battery (2021–2024):
+
+| Test | v1.0 | v2.0 | Verdict |
+| ---- | ---- | ---- | ------- |
+| Charging zone residual (225–315°) | −0.062 | −0.0002 | FIXED |
+| Boundary calibration gap (p̂=0.2–0.5) | +0.160 | +0.063 | PARTIAL |
+| Moran's I spatial clustering | 32/35 players significant | see figure | — |
+| YoY stability (OWR ρ) | 0.727–0.787 | 0.693–0.847 | stable/improving |
+| YoY stability (b ρ) | 0.761–0.842 | 0.717–0.941 | improving |
+
+External validation (OAA correlation, 2021–2024):
+
+| Check | Result |
+| ----- | ------ |
+| Spearman ρ(OWR, OAA) | +0.18 to +0.33 by season |
+| ρ(gamma, OAA In-fraction) | +0.17 pooled (p=0.001) |
+| y0_offset population mean | +43 ft (inferred depth ~353 ft) |
+| B3: Strategic vs Standard RMSE | 0.293 vs 0.265 — Strategic degrades fit ✓ |
+
+The charging zone fix is the headline result. `y0_offset` successfully absorbs the fixed-origin confound; relative rankings pass face validity (Doyle deep at Coors, Carroll/Buxton shallow). The strategic alignment residual check provides indirect validation that `y0_offset` is identifying genuine pre-play positioning.
+
+---
+
 ## Figures
 
-Interactive Plotly figures from the Bayesian pipeline, exported to `docs/`:
+Interactive Plotly figures exported to `docs/`:
 
-1. **Posterior ellipse** — posterior-mean heatmap + semi-transparent sample ellipses forming a credible band (v2.0: asymmetric half-ellipse, marker at inferred starting position)
-2. **Bayesian rankings** — horizontal bar chart with ±1 SD credible interval error bars
-3. **Season evolution** — monthly snapshots through a season with narrowing credible bands (April→September)
-4. **Prior vs. posterior** — two-panel density diagnostic; shrinkage visible for thin-data players
-5. **Calibration** — actual catch rate vs. predicted P(catch), 10 quantile bins (v1.0 diagnostic)
+**Pipeline figures** (from `04_bayes.py`):
+
+1. **Posterior ellipse** — posterior-mean heatmap + semi-transparent sample ellipses (credible band); v2.0: asymmetric half-ellipse, marker at inferred starting position
+2. **Bayesian rankings** — OWR and spectacular_play_prob bar charts with ±1 SD credible intervals
+3. **Season evolution** — monthly snapshots with narrowing credible bands (April→September)
+4. **Prior vs. posterior** — shrinkage visible for thin-data players
+5. **Spectacular zone** — field coverage heatmap; dark regions are where only elite CFs operate
+
+**Diagnostic figures** (from `06_diagnostics_v2.py`):
+
+1. **Directional residuals** — charging/retreating zone bias; T1 verdict
+2. **Moran's I** — spatial autocorrelation by player; T2 verdict
+3. **Calibration** — predicted vs. actual catch rate by probability bin; T3 verdict
+4. **YoY correlations** — parameter stability across adjacent seasons; T6 verdict
+
+**Validation figures** (from `07_validation.py`):
+
+1. **OWR vs OAA** — 4-panel scatter by season with Spearman ρ
+2. **Spectacular vs directional OAA** — gamma and SPP vs OAA In-fraction
 
 ---
 
@@ -369,6 +408,11 @@ notebooks/
   01_data.py         Pull and inspect Statcast data (Jupytext format)
   04_bayes.py        Full Bayesian pipeline, sequential updates, figures
   05_diagnostics.py  v1.0 diagnostic battery (5 tests, motivated v2.0 design)
+  06_diagnostics_v2.py  v2.0 diagnostic battery (7 tests: bias resolution, Moran's I,
+                         calibration, parameter summaries, identifiability, YoY
+                         correlations, empirical σ_transition vs λ=1.25)
+  07_validation.py   External validation: OWR/spectacular_prob vs Statcast OAA,
+                     directional OAA validates gamma, y0_offset face validity
 stan/
   cf_range_v2.stan         Burn-in model (v2.0: adds y0_offset, log_gamma)
   cf_range_update_v2.stan  Sequential update model (v2.0: all 4 priors as data)
