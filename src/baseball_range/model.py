@@ -17,6 +17,8 @@ A ball at normalized distance d_i = 1 is caught with probability σ(β₀ − β
 The ellipse boundary (d_i = 1) is the 50%-catchability contour when β₀ = β₁.
 """
 
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -148,6 +150,22 @@ class PlayerRange:
 
 # ── Fit all players ───────────────────────────────────────────────────────────
 
+def _fit_player_job(args: tuple) -> tuple:
+    """
+    Worker function for parallel player fitting.
+
+    Accepts a flat tuple so it is picklable by ProcessPoolExecutor.
+    Returns a tuple that fit_all reassembles into a PlayerRange + log line.
+    """
+    pid, name, dx, dy, tau, y, n_boot, beta_0, beta_1, seed = args
+    t0 = time.time()
+    rng = np.random.default_rng(seed)
+    a_hat, b_hat = fit_player(dx, dy, tau, y, beta_0, beta_1)
+    means, sds = bootstrap_player(dx, dy, tau, y, n_boot=n_boot,
+                                  beta_0=beta_0, beta_1=beta_1, rng=rng)
+    return pid, name, len(dx), a_hat, b_hat, sds[0], sds[1], beta_0, beta_1, time.time() - t0
+
+
 def fit_all(
     df: pd.DataFrame,
     min_opportunities: int = 75,
@@ -155,43 +173,122 @@ def fit_all(
     beta_0: float = DEFAULT_BETA_0,
     beta_1: float = DEFAULT_BETA_1,
     seed: int = 42,
+    n_jobs: int = 1,
 ) -> list[PlayerRange]:
     """
     Fit model for all players with at least min_opportunities observations.
 
     Expects columns: player_id, player_name, delta_x, delta_y, hang_time, caught.
+    Logs one line per player: name, n, fitted (a, b) with SEs, and per-player time.
+
+    Parameters
+    ----------
+    n_jobs : int
+        Number of parallel worker processes (default 1 = sequential).
+        Set to 2 or 3 to parallelize across players; each player's MLE +
+        bootstrap is independent.
     """
     rng = np.random.default_rng(seed)
+
+    # Pre-filter to qualifying players so the progress bar and ETA are accurate.
+    all_groups = list(df.groupby("player_id"))
+    qualifying = [(pid, g) for pid, g in all_groups if len(g) >= min_opportunities]
+    print(
+        f"{len(qualifying)} qualifying players (≥{min_opportunities} opportunities) "
+        f"of {len(all_groups)} total"
+    )
+
+    # Build job args: pass numpy arrays (not DataFrames) so pickling is cheap.
+    seeds = rng.integers(0, 2**31, len(qualifying))
+    job_args = [
+        (
+            pid,
+            group["player_name"].iloc[0] if "player_name" in group.columns else str(pid),
+            group["delta_x"].values,
+            group["delta_y"].values,
+            group["hang_time"].values,
+            group["caught"].values,
+            n_boot, beta_0, beta_1, int(seeds[i]),
+        )
+        for i, (pid, group) in enumerate(qualifying)
+    ]
+
     results = []
-    players = df.groupby("player_id")
+    t_start = time.time()
 
-    for pid, group in tqdm(players, desc="Fitting players"):
-        if len(group) < min_opportunities:
-            continue
+    if n_jobs == 1:
+        for args in tqdm(job_args, desc="Fitting"):
+            out = _fit_player_job(args)
+            pid, name, n, a_hat, b_hat, a_se, b_se, b0, b1, elapsed = out
+            tqdm.write(
+                f"  {name:<26s}  n={n:4d}  "
+                f"a={a_hat:5.1f}±{a_se:.1f}  b={b_hat:5.1f}±{b_se:.1f}  "
+                f"{elapsed:.1f}s"
+            )
+            results.append(PlayerRange(
+                player_id=int(pid), player_name=name, a=a_hat, b=b_hat,
+                a_se=a_se, b_se=b_se, n_opportunities=n, beta_0=b0, beta_1=b1,
+            ))
+    else:
+        futures = {}
+        with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+            for args in job_args:
+                futures[executor.submit(_fit_player_job, args)] = args[1]  # name
+            with tqdm(total=len(job_args), desc=f"Fitting ({n_jobs} workers)") as pbar:
+                for future in as_completed(futures):
+                    pid, name, n, a_hat, b_hat, a_se, b_se, b0, b1, elapsed = future.result()
+                    print(
+                        f"  {name:<26s}  n={n:4d}  "
+                        f"a={a_hat:5.1f}±{a_se:.1f}  b={b_hat:5.1f}±{b_se:.1f}  "
+                        f"{elapsed:.1f}s",
+                        flush=True,
+                    )
+                    results.append(PlayerRange(
+                        player_id=int(pid), player_name=name, a=a_hat, b=b_hat,
+                        a_se=a_se, b_se=b_se, n_opportunities=n, beta_0=b0, beta_1=b1,
+                    ))
+                    pbar.update(1)
 
-        name = group["player_name"].iloc[0] if "player_name" in group.columns else str(pid)
-        dx = group["delta_x"].values
-        dy = group["delta_y"].values
-        tau = group["hang_time"].values
-        y = group["caught"].values
-
-        a_hat, b_hat = fit_player(dx, dy, tau, y, beta_0, beta_1)
-        means, sds = bootstrap_player(dx, dy, tau, y, n_boot=n_boot,
-                                      beta_0=beta_0, beta_1=beta_1, rng=rng)
-
-        results.append(PlayerRange(
-            player_id=int(pid),
-            player_name=name,
-            a=a_hat,
-            b=b_hat,
-            a_se=sds[0],
-            b_se=sds[1],
-            n_opportunities=len(group),
-            beta_0=beta_0,
-            beta_1=beta_1,
-        ))
-
+    print(f"\nFitted {len(results)} players in {time.time() - t_start:.0f}s")
     return sorted(results, key=lambda r: r.ellipse_area(), reverse=True)
+
+
+# ── MLE identification filter ─────────────────────────────────────────────────
+#
+# The MLE optimizer can drift (a, b) to physically implausible values when the
+# likelihood surface is flat in one direction — typically for players whose
+# observed opportunities cluster tightly along the depth axis (few lateral
+# opportunities), so a is essentially unobserved. The optimizer finds a ridge
+# where any large value of a fits equally well, and Nelder-Mead wanders far
+# from the truth.
+#
+# This is a fundamental MLE limitation: without prior information, an
+# unobserved parameter has no anchor. The Bayesian hierarchical model handles
+# this naturally — the population prior on (a, b) prevents drift and shrinks
+# thin-data players toward the population mean.
+#
+# Filter criterion: a or b > MAX_PLAUSIBLE_SPEED (ft/s). No outfielder can
+# cover ground at 50 ft/s (~34 mph) — faster than a world-class sprinter.
+# Values above this are optimization artifacts, not estimates.
+
+MAX_PLAUSIBLE_SPEED = 50.0  # ft/s — physical upper bound for (a, b)
+
+
+def filter_identified(results: list[PlayerRange]) -> tuple[list[PlayerRange], list[PlayerRange]]:
+    """
+    Separate identified from unidentified MLE estimates.
+
+    Returns (identified, unidentified). Unidentified players have at least one
+    parameter above MAX_PLAUSIBLE_SPEED — the MLE optimizer drifted to an
+    implausible value because the likelihood was flat in that direction.
+
+    These players should be excluded from MLE-based rankings. They are not
+    excluded from the Bayesian pipeline, which regularizes them via the
+    population prior.
+    """
+    identified = [r for r in results if r.a < MAX_PLAUSIBLE_SPEED and r.b < MAX_PLAUSIBLE_SPEED]
+    unidentified = [r for r in results if r not in identified]
+    return identified, unidentified
 
 
 def results_to_df(results: list[PlayerRange]) -> pd.DataFrame:

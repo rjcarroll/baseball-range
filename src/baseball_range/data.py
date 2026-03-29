@@ -90,10 +90,13 @@ def pull_cf_opportunities(start_date: str, end_date: str) -> pd.DataFrame:
     flies["feet_x"], flies["feet_y"] = pixels_to_feet(flies["hc_x"], flies["hc_y"])
 
     # CF territory filter
+    # hang_time > 0 excludes the rare negative-launch-angle Statcast rows where
+    # the vacuum formula gives τ < 0; these are not genuine fly-ball opportunities.
     cf_mask = (
         (flies["feet_x"].abs() < CF_LAT_MAX)
         & (flies["feet_y"] > CF_DEPTH_MIN)
         & (flies["feet_y"] < CF_DEPTH_MAX)
+        & (flies["hang_time"] > 0)
     )
     cf = flies[cf_mask].copy()
 

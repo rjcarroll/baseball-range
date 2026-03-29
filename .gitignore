@@ -1,6 +1,9 @@
 # Cached data (large, re-pullable from Baseball Savant)
 data/*.parquet
 
+# Archived v1.0 posteriors (derived, large)
+data/v1/
+
 # Generated figure HTML (built artifacts)
 docs/*.html
 
@@ -25,3 +28,12 @@ venv/
 
 # macOS
 .DS_Store
+
+# Run logs
+logs/
+
+# Compiled Stan model binaries (platform-specific, rebuilt by cmdstanpy)
+stan/cf_range
+stan/cf_range_update
+stan/cf_range_v2
+stan/cf_range_update_v2

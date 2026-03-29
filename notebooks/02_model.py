@@ -11,7 +11,7 @@ sys.path.insert(0, "../src")
 import pandas as pd
 import numpy as np
 from baseball_range.data import load_cf_opportunities, add_player_names
-from baseball_range.model import fit_all, results_to_df, compute_all_stats
+from baseball_range.model import fit_all, results_to_df, compute_all_stats, filter_identified
 
 # %%
 df = load_cf_opportunities("../data")
@@ -21,11 +21,23 @@ print(f"{len(df):,} opportunities, {df['player_id'].nunique()} players")
 # %%
 # Fit all players with >= 75 opportunities
 # Runtime: ~5 min (300 bootstrap samples per player, ~80-100 qualifying players)
-results = fit_all(df, min_opportunities=75, n_boot=300, seed=42)
+results = fit_all(df, min_opportunities=75, n_boot=300, seed=42, n_jobs=4)
 print(f"Fitted {len(results)} players")
 
 # %%
-rankings = results_to_df(results)
+# Filter out players where MLE drifted to implausible values (unidentified a or b).
+# These are players with few lateral opportunities — the likelihood is flat in the
+# a direction so the optimizer wanders to physically impossible speeds.
+# The Bayesian pipeline handles these correctly via the population prior.
+results_id, results_unid = filter_identified(results)
+if results_unid:
+    print(f"\nDropped {len(results_unid)} player(s) with unidentified MLE parameters:")
+    for r in results_unid:
+        print(f"  {r.player_name:<26s}  a={r.a:.1f}  b={r.b:.1f}  n={r.n_opportunities}")
+print(f"\n{len(results_id)} players with identified parameters proceeding to rankings.\n")
+
+# %%
+rankings = results_to_df(results_id)
 print(rankings.head(20).to_string(index=False))
 
 # %%
@@ -42,7 +54,7 @@ print("Saved to data/player_ranges.parquet")
 # spectacular_play_prob: expected catch probability on plays outside most
 #                        fielders' reliable ranges (preferred for late-inning subs)
 
-stats = compute_all_stats(results, df, catch_threshold=0.80, n_se=1.0,
+stats = compute_all_stats(results_id, df, catch_threshold=0.80, n_se=1.0,
                           max_spectacular_coverage=1)
 print(stats[["player_name", "opp_weighted_range", "spectacular_play_prob",
              "ellipse_area_5s", "n_opportunities"]].head(20).to_string(index=False))
@@ -55,6 +67,7 @@ print("Saved to data/player_stats.parquet")
 # How different are opp_weighted_range rankings vs. ellipse_area rankings?
 by_area = stats.sort_values("ellipse_area_5s", ascending=False)["player_name"].tolist()
 by_owr  = stats["player_name"].tolist()  # already sorted by opp_weighted_range
+
 rank_shift = {
     name: by_area.index(name) - by_owr.index(name)
     for name in by_owr
@@ -77,8 +90,8 @@ def inspect_player(pr, tau_h=5.0):
     return depths, p
 
 # Best and worst by area
-best = results[0]
-worst = results[-1]
+best = results_id[0]
+worst = results_id[-1]
 
 import plotly.graph_objects as go
 fig = go.Figure()
